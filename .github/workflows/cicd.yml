@@ -7,7 +7,7 @@ on:
 
 env:
   # set your bucket here (or reference another secret/env)
-  BUCKET_NAME: spark-datasets-gds
+  BUCKET_NAME: spark-dst-gds
   CODE_SUBDIR: products/py_modules
 
 jobs:
