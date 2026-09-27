@@ -23,7 +23,7 @@ def write_to_staging(df, project, dataset, staging_table):
         .write
         .format("bigquery")
         .option("table", f"{project}.{dataset}.{staging_table}")
-        .option("temporaryGcsBucket", "gs://spark-dst-gds")
+        .option("temporaryGcsBucket", "spark-dst-gds")
         .option("intermediateFormat", "parquet")
         .mode("overwrite")
         .save()
