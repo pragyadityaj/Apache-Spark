@@ -1,15 +1,49 @@
 # writer.py
 from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
 from google.cloud import storage
 from google.cloud import bigquery
 
-def write_to_staging(df, project, dataset, staging_table):
+def write_to_staging(spark: SparkSession, df, project: str, dataset: str, staging_table: str, target_table: str):
     """
-    Overwrite the staging table in BigQuery.
+    Reads existing active records from BigQuery, filters out unchanged records,
+    and writes ONLY modified or brand-new records to the staging table.
     """
+    target_path = f"{project}.{dataset}.{target_table}"
+    
+    try:
+        # Read current active records from BigQuery
+        df_target_active = (
+            spark.read.format("bigquery")
+            .option("table", target_path)
+            .load()
+            .filter(F.col("is_current") == True)
+        )
 
+        # Join incoming data with active target records on primary key
+        joined_df = df.alias("inc").join(
+            df_target_active.alias("target"),
+            on="product_id",
+            how="left"
+        )
+
+        # Record has changed if it's brand new OR if any monitored column differs
+        cols = ["name", "category", "price", "supplier", "status"]
+        has_changed = F.col("target.product_id").isNull() | F.coalesce(
+            *[F.col(f"inc.{c}") != F.col(f"target.{c}") for c in cols]
+        )
+
+        # Filter down to only new or modified records
+        df_to_stage = joined_df.filter(has_changed).select("inc.*")
+
+    except Exception as e:
+        # Fallback if target table doesn't exist yet on initial load
+        print(f"Notice: Could not read target table '{target_path}'. Ingesting full batch. Details: {e}")
+        df_to_stage = df
+
+    # Overwrite the staging table with only changed/new records
     (
-        df.select(
+        df_to_stage.select(
             "product_id",
             "name",
             "category",
@@ -29,6 +63,7 @@ def write_to_staging(df, project, dataset, staging_table):
         .save()
     )
 
+
 def merge_scd2_bq(
     spark: SparkSession,
     project: str,
@@ -37,26 +72,14 @@ def merge_scd2_bq(
     target_table: str,
 ):
     """
-    Expire old SCD2 rows and upsert new/changed ones directly in BigQuery.
+    Expire old SCD2 rows and insert new/changed ones directly in BigQuery.
     """
     key  = "product_id"
-    cols = ["name","category","price","supplier","status"]
+    cols = ["name", "category", "price", "supplier", "status"]
     on   = f"T.{key} = S.{key} AND T.is_current"
     changes = " OR ".join(f"T.{c} <> S.{c}" for c in cols)
 
-    # merge_sql = f"""
-    # MERGE `{project}.{dataset}.{target_table}` AS T
-    # USING `{project}.{dataset}.{staging_table}` AS S
-    #   ON {on}
-    # WHEN MATCHED AND ({changes}) THEN
-    #   UPDATE SET
-    #     T.is_current = FALSE,
-    #     T.effective_end_date = S.effective_start_date 
-    # WHEN NOT MATCHED BY TARGET THEN
-    #   INSERT ({key}, {', '.join(cols + ['effective_start_date','effective_end_date','is_current'])})
-    #   VALUES ({', '.join('S.'+c for c in [key] + cols + ['effective_start_date','effective_end_date','is_current'] )})
-    # """
-
+    # 1. Expire current active records where changes were detected
     merge_sql = f"""
     MERGE `{project}.{dataset}.{target_table}` AS T
     USING `{project}.{dataset}.{staging_table}` AS S
@@ -67,24 +90,21 @@ def merge_scd2_bq(
         T.effective_end_date = S.effective_start_date 
     """
 
-    # kick off the job on BigQuery
     client = bigquery.Client(project=project)
-    job    = client.query(merge_sql)
-    job.result()  # wait for it to finish
+    job = client.query(merge_sql)
+    job.result()  # Wait for merge completion
 
+    # 2. Insert all staged records into target table
     insert_query = f"""INSERT INTO `{project}.{dataset}.{target_table}` SELECT * FROM `{project}.{dataset}.{staging_table}`"""
     insert_staging_job = client.query(insert_query)
-    insert_staging_job.result()  # wait for it to finish
+    insert_staging_job.result()  # Wait for insert completion
     print(f"Merge completed: {job.job_id}")
 
-# import subprocess
-
-# def archive_processed_csv(bucket, date):
-#     src = f"gs://{bucket}/products/input/products_{date}.csv"
-#     dst = f"gs://{bucket}/products/archive/products_{date}.csv"
-#     subprocess.check_call(["gsutil", "mv", src, dst])
 
 def archive_processed_csv(bucket_name: str, proc_date: str):
+    """
+    Move processed CSV file from input/ to archive/ directory in GCS.
+    """
     client = storage.Client()
     bucket = client.bucket(bucket_name)
     src = bucket.blob(f"products/input/products_{proc_date}.csv")
