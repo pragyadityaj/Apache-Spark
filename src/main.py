@@ -23,7 +23,7 @@ def main():
     # 3) Sculpt SCD2
     df2 = etl.sculpt_scd2(df, proc_date)
     # 4) Stage
-    writer.write_to_staging(df2, "project-88e65735-0515-4c3e-8c9", "product_dwh", "dim_products_staging","dim_products")
+    writer.write_to_staging(spark,df2, "project-88e65735-0515-4c3e-8c9", "product_dwh", "dim_products_staging","dim_products")
     # 5) Merge
     writer.merge_scd2_bq(spark, "project-88e65735-0515-4c3e-8c9", "product_dwh", "dim_products_staging", "dim_products")
     # 6) Archive
