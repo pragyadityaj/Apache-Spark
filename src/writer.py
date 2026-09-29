@@ -29,8 +29,13 @@ def write_to_staging(spark: SparkSession, df, project: str, dataset: str, stagin
 
         # Record has changed if it's brand new OR if any monitored column differs
         cols = ["name", "category", "price", "supplier", "status"]
-        has_changed = F.col("target.product_id").isNull() | F.coalesce(
-            *[F.col(f"inc.{c}") != F.col(f"target.{c}") for c in cols]
+        has_changed = (
+        F.col("target.product_id").isNull() | 
+        (~F.col("inc.name").eqNullSafe(F.col("target.name"))) |
+        (~F.col("inc.category").eqNullSafe(F.col("target.category"))) |
+        (~F.col("inc.price").eqNullSafe(F.col("target.price"))) |
+        (~F.col("inc.supplier").eqNullSafe(F.col("target.supplier"))) |
+        (~F.col("inc.status").eqNullSafe(F.col("target.status")))
         )
 
         # Filter down to only new or modified records
