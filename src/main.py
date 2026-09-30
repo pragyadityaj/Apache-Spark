@@ -27,7 +27,7 @@ def main():
     # 5) Merge
     writer.merge_scd2_bq(spark, "project-88e65735-0515-4c3e-8c9", "product_dwh", "dim_products_staging", "dim_products")
     # 6) Archive
-    writer.archive_processed_csv("spark-datasets-gds", proc_date)
+    # writer.archive_processed_csv("spark-datasets-gds", proc_date)
 
     spark.stop()
     sys.exit(0)

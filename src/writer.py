@@ -106,13 +106,13 @@ def merge_scd2_bq(
     print(f"Merge completed: {job.job_id}")
 
 
-def archive_processed_csv(bucket_name: str, proc_date: str):
-    """
-    Move processed CSV file from input/ to archive/ directory in GCS.
-    """
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-    src = bucket.blob(f"products/input/products_{proc_date}.csv")
-    dst_name = f"products/archive/products_{proc_date}.csv"
-    bucket.copy_blob(src, bucket, dst_name)
-    src.delete()
+# def archive_processed_csv(bucket_name: str, proc_date: str):
+#     """
+#     Move processed CSV file from input/ to archive/ directory in GCS.
+#     """
+#     client = storage.Client()
+#     bucket = client.bucket(bucket_name)
+#     src = bucket.blob(f"products/input/products_{proc_date}.csv")
+#     dst_name = f"products/archive/products_{proc_date}.csv"
+#     bucket.copy_blob(src, bucket, dst_name)
+#     src.delete()
